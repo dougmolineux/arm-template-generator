@@ -1,14 +1,59 @@
 
-function getBaseTemplate() {
+function nsLevelAuth() {
+  return "[resourceId('Microsoft.ServiceBus/namespaces/authorizationRules', parameters('serviceBusNamespaceName'), variables('defaultSASKeyName'))]";
+}
+
+function topicLevelAuth() {
+  return "[resourceId('Microsoft.ServiceBus/namespaces/topics/authorizationRules', parameters('serviceBusNamespaceName'), parameters('serviceBusTopicName'), parameters('serviceBusRuleName'))]";
+}
+
+function getVariables(authRuleName) {
+  if (!authRuleName) {
+    return {
+      defaultSASKeyName: 'RootManageSharedAccessKey',
+      defaultAuthRuleResourceId: nsLevelAuth(),
+      sbVersion: '2017-04-01',
+    };
+  }
+  return {
+    defaultSASKeyName: "[parameters('serviceBusRuleName')]",
+    defaultAuthRuleResourceId: topicLevelAuth(authRuleName),
+    sbVersion: '2017-04-01',
+  };
+}
+
+function getBaseTemplate(authRuleName) {
+  const topicResources = [
+    {
+      apiVersion: "[variables('sbVersion')]",
+      name: "[parameters('serviceBusSubscriptionName')]",
+      type: 'Subscriptions',
+      dependsOn: [
+        "[parameters('serviceBusTopicName')]",
+      ],
+      properties: {},
+    },
+  ];
+
+  if (authRuleName) {
+    topicResources.push({
+      apiVersion: "[variables('sbVersion')]",
+      name: "[parameters('serviceBusRuleName')]",
+      type: 'authorizationRules',
+      dependsOn: [
+        "[parameters('serviceBusTopic')]",
+      ],
+      properties: {
+        Rights: ['Send', 'Listen'],
+      },
+    });
+  }
+
   return {
     $schema: 'https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#',
     contentVersion: '1.0.0.0',
     parameters: {},
-    variables: {
-      defaultSASKeyName: 'RootManageSharedAccessKey',
-      defaultAuthRuleResourceId: "[resourceId('Microsoft.ServiceBus/namespaces/authorizationRules', parameters('serviceBusNamespaceName'), variables('defaultSASKeyName'))]",
-      sbVersion: '2017-04-01',
-    },
+    variables: {},
     resources: [{
       apiVersion: "[variables('sbVersion')]",
       name: "[parameters('serviceBusNamespaceName')]",
@@ -29,17 +74,7 @@ function getBaseTemplate() {
           properties: {
             path: "[parameters('serviceBusTopicName')]",
           },
-          resources: [
-            {
-              apiVersion: "[variables('sbVersion')]",
-              name: "[parameters('serviceBusSubscriptionName')]",
-              type: 'Subscriptions',
-              dependsOn: [
-                "[parameters('serviceBusTopicName')]",
-              ],
-              properties: {},
-            },
-          ],
+          resources: topicResources,
         },
       ],
     }],
@@ -66,7 +101,7 @@ function getParam(value, desc) {
   };
 }
 
-function getAllParams(sku, namespace, topic, subscription) {
+function getAllParams(sku, namespace, topic, subscription, authRuleName) {
   const params = {};
 
   params.serviceBusSku = getParam(
@@ -89,6 +124,12 @@ function getAllParams(sku, namespace, topic, subscription) {
     '[resourceGroup().location]',
     'Location for all resources.',
   );
+  if (authRuleName) {
+    params.serviceBusRuleName = getParam(
+      authRuleName,
+      'Name of the Topic Level Authorization Rule, this will appear in the Azure Portal as a Shared Access Policy',
+    );
+  }
 
   return params;
 }
@@ -98,13 +139,16 @@ exports.newTemplate = (options) => {
     throw new Error('namespace, topic and subscription required on options object');
   }
 
-  const template = getBaseTemplate();
+  const authRuleName = options.authRuleName || null;
+  const template = getBaseTemplate(authRuleName);
   template.parameters = getAllParams(
     options.sku || 'Basic',
     options.namespace,
     options.topic,
     options.subscription,
+    authRuleName,
   );
+  template.variables = getVariables(authRuleName);
 
   return template;
 };

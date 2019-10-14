@@ -26,11 +26,22 @@ async function init() {
     type: 'input',
     name: 'filename',
     message: 'Local Filename for Template [template.json]:',
+  }, {
+    type: 'list',
+    name: 'authRuleNameExists',
+    choices: ['Yes', 'No'],
+    default: 'No',
+    message: 'Do you want to setup a Topic Level Authorization Rule? [No]:',
+  }, {
+    type: 'input',
+    name: 'authRuleName',
+    when: (answers) => answers.authRuleNameExists === 'Yes',
+    message: 'Name of Authorization Rule:',
   }]).then((answers) => {
     const template = atg.newTemplate(answers);
     try {
       fs.writeFileSync(answers.filename || 'template.json', JSON.stringify(template, null, 4));
-      console.log('File written successfully to ', answers.filename || 'template.json');
+      console.log('File written successfully to', answers.filename || 'template.json');
     } catch (e) {
       console.error('Error writing file to ', answers.filename || 'template.json');
       console.error(e);
